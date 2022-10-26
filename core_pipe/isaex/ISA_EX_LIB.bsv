@@ -91,6 +91,16 @@ function Bit#(7) instr_OPCODE (Bit#(32) instr);
    return unpack(instr[6:0]);
 endfunction
 
+function Int#(32) instr_S_offset(Bit#(32) instr);
+   Int#(32) instr_s_offset = extend(unpack({instr[31:25],instr[11:7]}));
+   return instr_s_offset;
+endfunction
+
+function Int#(33) instr_B_offset(Bit#(32) instr);
+   Int#(33) instr_b_offset = extend(unpack({instr[31],instr[7],instr[30:25],instr[11:8],1'b0}));
+   return instr_b_offset;
+endfunction
+
 ///}}}
 
 ///{{{ 3. instruction implement
@@ -335,8 +345,156 @@ function Instr_L_out instr_TYPE_L(Alu_in alu_in);
    
    
 endfunction
-
 ///}}}
+
+///{{{ 3.4 Load instraction
+
+function Alu_out_to_mem instr_TYPE_S(Alu_in alu_in);
+   Int#(32) mem_wdata;
+   Bit#(1)  mem_rd;
+   Bit#(1)  mem_wr;
+
+   UInt#(32) mem_waddr = unpack(pack(alu_in.rs1_data + instr_S_offset(alu_in.instr))); 
+   let mem_raddr = mem_waddr;
+   Bit#(2) mem_waddr_byte_index = pack(mem_waddr)[1:0]; 
+   
+   Bit#(32) mem_rdata = pack(alu_in.mem_rdata);
+   Bit#(32) rs2_data  = pack(alu_in.rs2_data);
+
+   case(instr_FUNC3(alu_in.instr))
+      inst_SB: begin  //Store byte
+                  mem_rd = 'b1;
+                  mem_wr = 'b1;
+                  case(mem_waddr_byte_index)
+                     'd0:     mem_wdata     = unpack({mem_rdata[31:8],rs2_data[7:0]});
+                     'd1:     mem_wdata     = unpack({mem_rdata[31:16],rs2_data[15:8],mem_rdata[7:0]});
+                     'd2:     mem_wdata     = unpack({mem_rdata[31:24],rs2_data[23:16],mem_rdata[15:0]});
+                     default: mem_wdata     = unpack({rs2_data[31:24],mem_rdata[23:0]});
+                  endcase 
+      end 
+      inst_SH: begin //Load half
+                  mem_rd = 'b1;
+                  mem_wr = 'b1;
+                  if(mem_waddr_byte_index == 'b0) begin
+                     mem_wdata = unpack({mem_rdata[31:16],rs2_data[15:0]});
+                  end 
+                  else begin
+                     mem_wdata = unpack({rs2_data[15:0],mem_rdata[15:0]});
+                  end 
+      end
+      inst_SW: begin //Load Word
+                  mem_rd = 'b1;
+                  mem_wr = 'b1;
+                  mem_wdata = unpack(rs2_data);
+      end 
+      default: begin
+                  mem_rd = 'b0;
+                  mem_wr = 'b0;
+                  mem_wdata = 0;
+      end 
+  endcase
+
+
+   let alu_out_to_mem = Alu_out_to_mem{
+                           mem_raddr:mem_raddr,
+                           mem_wdata:mem_wdata,
+                           mem_waddr:mem_waddr,
+                           mem_wr: mem_wr, //write enable
+                           mem_rd: mem_rd 
+                           };
+
+    return alu_out_to_mem;
+   
+endfunction
+///}}}
+
+
+///{{{ 3.5 B Jump instraction
+function Alu_out_to_pipectrl instr_TYPE_B(Alu_in alu_in);
+   Bit#(1) hold_flag = 'b0;
+   UInt#(32) jump_addr;
+   Bit#(1) jump_flag;
+   Int#(32) rs1_data = alu_in.rs1_data;
+   Int#(32) rs2_data = alu_in.rs2_data;
+   UInt#(32) rs1_data_u = unpack(pack(alu_in.rs1_data));
+   UInt#(32) rs2_data_u = unpack(pack(alu_in.rs2_data));
+   Int#(33) instr_addr  = unpack({1'b0,pack(alu_in.instr_addr)});
+   Int#(33) instr_ofset = instr_B_offset(alu_in.instr);
+   UInt#(32) jump_addr_tmp = unpack(pack(instr_addr + instr_ofset)[31:0]);
+   case(instr_FUNC3(alu_in.instr))
+      inst_BEQ: begin
+                   if(rs1_data == rs2_data) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      inst_BNE: begin
+                   if(rs1_data != rs2_data) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      inst_BLT: begin
+                   if(rs1_data >= rs2_data) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      inst_BGE: begin
+                   if(rs1_data < rs2_data) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      inst_BLTU: begin
+                   if(rs1_data_u >= rs2_data_u) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      inst_BGEU: begin
+                   if(rs1_data_u < rs2_data_u) begin
+                       jump_flag = 'b1;
+                       jump_addr = jump_addr_tmp;
+                   end 
+                   else begin
+                      jump_flag = 'b0;
+                      jump_addr = 0;
+                   end
+                end 
+      default: begin
+               jump_flag = 'b0;
+               jump_addr = 0;
+      end 
+   endcase 
+
+   return Alu_out_to_pipectrl{
+             hold_flag : hold_flag,
+             jump_flag : jump_flag,
+             jump_addr : jump_addr 
+          };
+
+endfunction
 
 ///}}} end 3
 
@@ -346,11 +504,13 @@ endfunction
 typedef  struct {
     Alu_out_to_reg alu_out_to_reg;
     Alu_out_to_mem alu_out_to_mem;
+    Alu_out_to_pipectrl alu_out_to_pipectrl;
     } Instr_EX_out deriving(Bits);
 
 function Instr_EX_out instr_EX(Alu_in alu_in);
     Alu_out_to_reg       alu_out_to_reg     ;
     Alu_out_to_mem       alu_out_to_mem     ;
+    Alu_out_to_pipectrl  alu_out_to_pipectrl;
   //Alu_out_to_div       alu_out_to_div     ;
   //Alu_out_to_pipectrl  alu_out_to_pipectrl;
   //Alu_out_to_csrreg    alu_out_to_csrreg  ; 
@@ -365,6 +525,11 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
                                                  mem_wr: 'b0,
                                                  mem_rd: 'b0 
                                                  };
+                          alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
                        //alu_out_to_div      = unpack(0);
                        //alu_out_to_pipectrl = unpack(0);
                        //alu_out_to_csrreg   = unpack(0); 
@@ -378,11 +543,48 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
                                                   mem_wr: 'b0,
                                                   mem_rd: 'b0 
                                                   };
+                          alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
                        end 
         inst_TYPE_L: begin
                            let inst_load      = instr_TYPE_L(alu_in);
                            alu_out_to_reg     = inst_load.alu_out_to_reg;
                            alu_out_to_mem     = inst_load.alu_out_to_mem;
+                          alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
+                     end 
+        inst_TYPE_S: begin
+                        alu_out_to_mem     = instr_TYPE_S(alu_in);
+                        alu_out_to_reg     = Alu_out_to_reg{ 
+                                                 reg_wdata: 0,
+                                                 reg_wr   : 'b0,
+                                                 reg_waddr: 0 
+                                              };
+                          alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
+                     end 
+        inst_TYPE_B: begin
+                     alu_out_to_mem = Alu_out_to_mem{
+                                            mem_raddr:0,
+                                            mem_wdata:0,
+                                            mem_waddr:0,
+                                            mem_wr: 'b0,
+                                            mem_rd: 'b0 
+                                            };
+                     alu_out_to_reg = Alu_out_to_reg{ reg_wdata: 0,
+                                             reg_wr   : 'b0,
+                                             reg_waddr: 0 
+                                            };
+                      alu_out_to_pipectrl = instr_TYPE_B(alu_in);
                      end 
         default: begin
                      alu_out_to_mem = Alu_out_to_mem{
@@ -396,6 +598,11 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
                                              reg_wr   : 'b0,
                                              reg_waddr: 0 
                                             };
+                     alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
                   //alu_out_to_div      = unpack(0);
                   //alu_out_to_pipectrl = unpack(0);
                   //alu_out_to_csrreg   = unpack(0); 
@@ -403,7 +610,9 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
     endcase
 
     return Instr_EX_out{alu_out_to_reg:alu_out_to_reg,
-                        alu_out_to_mem:alu_out_to_mem};
+                        alu_out_to_mem:alu_out_to_mem,
+                        alu_out_to_pipectrl:alu_out_to_pipectrl
+                        };
 endfunction
 
 endpackage

@@ -23,7 +23,17 @@ module mkTb();
    rule drv_in_ISAEX;
       $display ("%d , ISAEX immd operation input",counter);
       Alu_in alu_in = unpack(0);
-      alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_I};
+      if(counter < 128) begin
+        alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_I};
+      end 
+      else if(counter < 256)
+        alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_R_M};
+      else if(counter < 512)
+        alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_L};
+      else if(counter < 768)
+        alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_S};
+      else if(counter < 1023)
+        alu_in.instr = {2'b0,pack(counter),5'b0,pack(counter)[2:0],5'b0,inst_TYPE_B};
       alu_in.reg_wr = 1;
       alu_in.reg_waddr = 1;
       alu_in.rs1_data = signExtend(unpack(pack(counter)));
@@ -33,6 +43,7 @@ module mkTb();
    rule write_to_reg ;
       $display ("%d , IMMD operation output",isa_ex_itf.alu_out_to_reg().reg_wdata);
       $display ("%d %d , IMMD operation output",isa_ex_itf.alu_out_to_mem().mem_rd,isa_ex_itf.alu_out_to_mem().mem_raddr);
+      $display ("%d  , B  operation output",isa_ex_itf.alu_out_to_pipectrl().jump_addr);
       //TODO, reg input tie 0
       let reg_to_id = reg_itf.reg_rd_out(unpack(0));
       reg_itf.reg_wr_back(isa_ex_itf.alu_out_to_reg());
