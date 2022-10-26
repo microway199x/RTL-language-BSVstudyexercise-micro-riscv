@@ -101,6 +101,11 @@ function Int#(33) instr_B_offset(Bit#(32) instr);
    return instr_b_offset;
 endfunction
 
+function Int#(33) instr_L_offset(Bit#(32) instr);
+   Int#(33) instr_l_offset = extend(unpack({instr[31],instr[19:12],instr[20],instr[30:21],1'b0}));
+   return instr_l_offset;
+endfunction
+
 ///}}}
 
 ///{{{ 3. instruction implement
@@ -496,6 +501,96 @@ function Alu_out_to_pipectrl instr_TYPE_B(Alu_in alu_in);
 
 endfunction
 
+///{{{ 3.6 Jump instraction
+
+typedef  struct {
+    Alu_out_to_reg alu_out_to_reg;
+    Alu_out_to_pipectrl alu_out_to_pipectrl;
+    } Instr_Jal_out deriving(Bits);
+
+function Instr_EX_out instr_JAL(Alu_in alu_in);
+   Alu_out_to_reg       alu_out_to_reg     ;
+   Alu_out_to_mem       alu_out_to_mem     ;
+   Alu_out_to_pipectrl  alu_out_to_pipectrl;
+
+   Bit#(1)  reg_wr     = alu_in.reg_wr;
+   UInt#(5) reg_waddr  = unpack(alu_in.reg_waddr);  
+   Int#(32) reg_wdata  = unpack(pack(alu_in.instr_addr + 4));  
+
+   Bit#(1)  hold_flag  = 'b0;
+   Bit#(1)  jump_flag  = 1'b1;
+   Int#(33) instr_addr = unpack({1'b0,pack(alu_in.instr_addr)});
+   Int#(33) instr_ofset= instr_L_offset(alu_in.instr);
+   UInt#(32) jump_addr = unpack(pack(instr_addr + instr_ofset)[31:0]);
+
+   alu_out_to_mem = Alu_out_to_mem{
+                          mem_raddr:0,
+                          mem_wdata:0,
+                          mem_waddr:0,
+                          mem_wr: 'b0,
+                          mem_rd: 'b0 
+                          };
+
+   alu_out_to_reg = Alu_out_to_reg{
+                        reg_wdata: reg_wdata,
+                        reg_wr:    reg_wr,
+                        reg_waddr: reg_waddr 
+                    };
+   alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                       hold_flag: hold_flag,
+                       jump_flag: jump_flag,
+                       jump_addr: jump_addr 
+                     };
+
+    return Instr_EX_out{alu_out_to_reg:alu_out_to_reg,
+                        alu_out_to_mem:alu_out_to_mem,
+                        alu_out_to_pipectrl:alu_out_to_pipectrl
+                        };
+
+endfunction
+
+function Instr_EX_out instr_JALR(Alu_in alu_in);
+   Alu_out_to_reg       alu_out_to_reg     ;
+   Alu_out_to_mem       alu_out_to_mem     ;
+   Alu_out_to_pipectrl  alu_out_to_pipectrl;
+
+   Bit#(1)  reg_wr     = alu_in.reg_wr;
+   UInt#(5) reg_waddr  = unpack(alu_in.reg_waddr);  
+   Int#(32) reg_wdata  = unpack(pack(alu_in.instr_addr + 4));  
+
+   Bit#(32) rs1_data   = pack(alu_in.rs1_data);  
+   Bit#(1)  hold_flag  = 'b0;
+   Bit#(1)  jump_flag  = 1'b1;
+   Bit#(32) instr_addr = signExtend({alu_in.instr[31],alu_in.instr[31:20]});
+   UInt#(32) jump_addr = unpack(instr_addr + rs1_data);
+
+   alu_out_to_mem = Alu_out_to_mem{
+                          mem_raddr:0,
+                          mem_wdata:0,
+                          mem_waddr:0,
+                          mem_wr: 'b0,
+                          mem_rd: 'b0 
+                          };
+
+   alu_out_to_reg = Alu_out_to_reg{
+                        reg_wdata: reg_wdata,
+                        reg_wr:    reg_wr,
+                        reg_waddr: reg_waddr 
+                    };
+   alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                       hold_flag: hold_flag,
+                       jump_flag: jump_flag,
+                       jump_addr: jump_addr 
+                     };
+
+    return Instr_EX_out{alu_out_to_reg:alu_out_to_reg,
+                        alu_out_to_mem:alu_out_to_mem,
+                        alu_out_to_pipectrl:alu_out_to_pipectrl
+                        };
+
+endfunction
+///}}}
+
 ///}}} end 3
 
 
@@ -553,7 +648,7 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
                            let inst_load      = instr_TYPE_L(alu_in);
                            alu_out_to_reg     = inst_load.alu_out_to_reg;
                            alu_out_to_mem     = inst_load.alu_out_to_mem;
-                          alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                           alu_out_to_pipectrl = Alu_out_to_pipectrl{
                                                  hold_flag: 'b0,
                                                  jump_flag: 'b0,
                                                  jump_addr: 0 
@@ -586,6 +681,93 @@ function Instr_EX_out instr_EX(Alu_in alu_in);
                                             };
                       alu_out_to_pipectrl = instr_TYPE_B(alu_in);
                      end 
+        inst_JAL: begin
+                     Instr_EX_out instr_ex_out;
+                     instr_ex_out = instr_JAL(alu_in);
+                     alu_out_to_mem = instr_ex_out.alu_out_to_mem;
+                     alu_out_to_reg = instr_ex_out.alu_out_to_reg;
+                     alu_out_to_pipectrl = instr_ex_out.alu_out_to_pipectrl;
+                  end
+        inst_JALR: begin
+                     Instr_EX_out instr_ex_out;
+                     instr_ex_out = instr_JALR(alu_in);
+                     alu_out_to_mem = instr_ex_out.alu_out_to_mem;
+                     alu_out_to_reg = instr_ex_out.alu_out_to_reg;
+                     alu_out_to_pipectrl = instr_ex_out.alu_out_to_pipectrl;
+                  end
+        inst_LUI: begin
+                     alu_out_to_mem = Alu_out_to_mem{
+                                            mem_raddr:0,
+                                            mem_wdata:0,
+                                            mem_waddr:0,
+                                            mem_wr: 'b0,
+                                            mem_rd: 'b0 
+                                            };
+                     alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
+                     alu_out_to_reg = Alu_out_to_reg{ reg_wdata: unpack({alu_in.instr[31:12],12'b0}),
+                                             reg_wr   : alu_in.reg_wr,
+                                             reg_waddr: unpack(alu_in.reg_waddr) 
+                                            };
+                  end 
+        inst_AUIPC: begin
+                     alu_out_to_mem = Alu_out_to_mem{
+                                            mem_raddr:0,
+                                            mem_wdata:0,
+                                            mem_waddr:0,
+                                            mem_wr: 'b0,
+                                            mem_rd: 'b0 
+                                            };
+                     alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
+                     alu_out_to_reg = Alu_out_to_reg{ reg_wdata: unpack({alu_in.instr[31:12],12'b0} + pack(alu_in.instr_addr)),
+                                             reg_wr   : alu_in.reg_wr,
+                                             reg_waddr: unpack(alu_in.reg_waddr) 
+                                            };
+                  end 
+        inst_NOP_OP: begin
+                     alu_out_to_mem = Alu_out_to_mem{
+                                            mem_raddr:0,
+                                            mem_wdata:0,
+                                            mem_waddr:0,
+                                            mem_wr: 'b0,
+                                            mem_rd: 'b0 
+                                            };
+                     alu_out_to_reg = Alu_out_to_reg{ reg_wdata: 0,
+                                             reg_wr   : 'b0,
+                                             reg_waddr: 0 
+                                            };
+                     alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b0,
+                                                 jump_addr: 0 
+                                                 };
+                     end 
+        inst_FENCE: begin
+                     alu_out_to_mem = Alu_out_to_mem{
+                                            mem_raddr:0,
+                                            mem_wdata:0,
+                                            mem_waddr:0,
+                                            mem_wr: 'b0,
+                                            mem_rd: 'b0 
+                                            };
+                     alu_out_to_reg = Alu_out_to_reg{ reg_wdata: 0,
+                                             reg_wr   : 'b0,
+                                             reg_waddr: 0 
+                                            };
+                     alu_out_to_pipectrl = Alu_out_to_pipectrl{
+                                                 hold_flag: 'b0,
+                                                 jump_flag: 'b1,
+                                                 jump_addr: alu_in.instr_addr + 4 
+                                                 };
+                     end 
+       
         default: begin
                      alu_out_to_mem = Alu_out_to_mem{
                                             mem_raddr:0,
