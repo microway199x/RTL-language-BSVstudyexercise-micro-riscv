@@ -1,6 +1,6 @@
 package CPU_GLOBAL_DEF;
 
-Uint#(32)    CpuResetAddr = 32'h0;
+Bit#(32)    cpu_reset_addr = 32'h0;
 //{{{ Global define
 //`define RstEnable 1'b0
 //`define RstDisable 1'b1

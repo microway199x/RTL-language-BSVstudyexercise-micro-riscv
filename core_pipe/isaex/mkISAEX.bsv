@@ -9,10 +9,6 @@ interface Isa_ex_itf;
    method Alu_out_to_reg alu_out_to_reg;
    method Alu_out_to_mem alu_out_to_mem;
    method Alu_out_to_pipectrl alu_out_to_pipectrl;
- //method Alu_out_to_mem get_mem;
- //method Alu_out_to_csrreg get_csrreg;
- //method Alu_out_to_div get_div;
- //method Alu_out_to_pipectrl get_pipectrl;
 endinterface 
 
 //module function

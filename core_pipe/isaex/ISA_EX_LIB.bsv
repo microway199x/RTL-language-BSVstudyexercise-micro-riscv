@@ -513,7 +513,7 @@ function Instr_EX_out instr_JAL(Alu_in alu_in);
    Alu_out_to_mem       alu_out_to_mem     ;
    Alu_out_to_pipectrl  alu_out_to_pipectrl;
 
-   Bit#(1)  reg_wr     = alu_in.reg_wr;
+   Bit#(1) reg_wr      = alu_in.reg_wr;
    UInt#(5) reg_waddr  = unpack(alu_in.reg_waddr);  
    Int#(32) reg_wdata  = unpack(pack(alu_in.instr_addr + 4));  
 
